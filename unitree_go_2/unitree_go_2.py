@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-from ark.client.comm_infrastructure.base_node import main
 from ark.system.component.robot import Robot
 from ark.system.driver.robot_driver import RobotDriver
 from arktypes import (
@@ -14,9 +13,8 @@ from arktypes import (
     float_t
 )
 from arktypes import pack
-from unitree_go_2_driver import UnitreeGo2Driver
+from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
 
-CONFIG_PATH = "config/global.yaml"
 
 @dataclass
 class Drivers(Enum): 
@@ -107,8 +105,3 @@ class UnitreeGo2(Robot):
     def send_robot_width(self, channel: str, msg: string_t) -> float_t:
         msg = pack.pack_float(self.robot_width)
         return msg
-
-if __name__ == "__main__":
-    name = "UnitreeGo2"
-    driver = UnitreeGo2Driver(component_name=name, component_config=CONFIG_PATH, sim=False)
-    main(UnitreeGo2, name, CONFIG_PATH, driver)
