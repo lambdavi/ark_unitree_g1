@@ -1,7 +1,42 @@
 name: "UnitreeGo2"
 config:
+  urdf_path: "urdf/urdf/go2_description.urdf"
   class_dir: "unitree_go_2"
   frequency: 1  # default is 240Hz
-  width: 0.31   # Width of the robot (m) 
+  width: 0.31   # Width of the robot (m)
+  initial_configuration:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+
 
         
