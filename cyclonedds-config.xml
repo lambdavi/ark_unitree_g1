@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<CycloneDDS>
+  <Domain id="any">
+    <Discovery>
+      <EnableTopicDiscoveryEndpoints>true</EnableTopicDiscoveryEndpoints>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
