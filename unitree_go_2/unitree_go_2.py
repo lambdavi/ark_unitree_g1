@@ -7,6 +7,7 @@ from ark.system.driver.robot_driver import RobotDriver
 from arktypes import (
     joint_state_t,
     force_t,
+    imu_t,
     joint_group_command_t,
     string_t,
     pose_2d_t,
@@ -38,18 +39,28 @@ class UnitreeGo2(Robot):
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
         self.force_pub_name = self.name + "/foot_forces"
+        self.imu_pub_name = self.name + "/imu"
         self.subscriber_name = self.name + "/joint_group_command"
         self.width_service_name = self.name + "/width"
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
             self.force_pub_name = self.force_pub_name + "/sim"
+            self.imu_pub_name = self.imu_pub_name + "/sim"
             self.subscriber_name = self.subscriber_name + "/sim"
             self.width_service_name = self.width_service_name + "/sim"
 
-        # Create publishers/subscribers
         component_channels = [(self.joint_pub_name, joint_state_t),
-                              (self.force_pub_name, force_t)]
+                              (self.force_pub_name, force_t),
+                              (self.imu_pub_name, imu_t)]
+
+        self.odometry = driver.config.get("odometry", True)
+        if self.odometry:
+            self.odometry_pub_name = self.name + "/odometry"
+            if self.sim:
+                self.odometry_pub_name = self.odometry_pub_name + "/sim"
+            component_channels.append((self.odometry_pub_name, velocity_2d_t))
+
         self.create_subscriber(self.subscriber_name, joint_group_command_t, self._joint_group_command_callback)
         self.component_channels_init(component_channels)
 
@@ -73,9 +84,15 @@ class UnitreeGo2(Robot):
 
     def pack_data(self, data):
         joint_msg = pack.pack_joint_state(**data["joint_state"])
-        force_msg = pack.pack_force(**data["force"])
+        force_msg = pack.pack_force(**data["foot_force"])
+        imu_msg = pack.pack_imu(**data["imu"])
         msgs = {self.joint_pub_name: joint_msg,
-                self.force_pub_name: force_msg}
+                self.force_pub_name: force_msg,
+                self.imu_pub_name: imu_msg}
+
+        if self.odometry:
+            odom_msg = pack.pack_velocity_2d(**data["odometry"])
+            msgs[self.odometry_pub_name] = odom_msg
         return msgs
 
     def step_component(self):
