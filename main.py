@@ -7,5 +7,5 @@ CONFIG_PATH = "config/global.yaml"
 
 if __name__ == "__main__":
     name = "UnitreeGo2"
-    driver = UnitreeGo2Driver(component_name=name, component_config=CONFIG_PATH, sim=False)
+    driver = UnitreeGo2Driver(component_name=name, component_config=CONFIG_PATH)
     main(UnitreeGo2, name, CONFIG_PATH, driver)
