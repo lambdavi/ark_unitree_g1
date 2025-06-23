@@ -1,3 +1,4 @@
+import sys
 import time
 import copy
 import numpy as np
@@ -10,7 +11,9 @@ from unitree_sdk2py.idl.unitree_go.msg.dds_._MotorState_ import MotorState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._IMUState_ import IMUState_
 from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
 from unitree_sdk2py.idl.geometry_msgs.msg.dds_._Vector3_ import Vector3_
+from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesAvoidClient
 
+from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
 from unitree_go_2.unitree_go_2_odometry import UnitreeGo2Odometry
 
@@ -50,14 +53,39 @@ class UnitreeGo2Driver(RobotDriver):
         else:
             ChannelFactoryInitialize(0)
 
+
+        # Get subscribers
         self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
         self.lowstate_subscriber.Init(self.lowstate_callback)
 
         self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
         self.odom_subscriber.Init(self.odom_callback)
 
+        # Create obstacle avoidance client for moving
+        self.move_client = ObstaclesAvoidClient()
+        self.move_client.SetTimeout(3.0)
+        self.move_client.Init()
+
+        # Set obstacle avoidance
+        spinner = ['|', '/', '-', '\\']
+        i = 0
+        while not self.move_client.SwitchGet()[1]:
+            self.move_client.SwitchSet(True)
+            sys.stdout.write('\rWaiting for obstacle avoidance switch... ' + spinner[i % len(spinner)])
+            sys.stdout.flush()
+            i += 1
+            time.sleep(0.1)
+        log.ok("Set Obstacle Avoidance Mode for Unitree Go 2")
+
+        self.move_client.UseRemoteCommandFromApi(True)
+        time.sleep(0.5)
+        log.ok("Set to use remote commands from Unitree SDK")
+
         self.lowstate = None
         self.unitree_odom = None
+        self.v_x = 0.0
+        self.v_y = 0.0
+        self.w = 0.0
 
     def get_header(self):
         timestamp =  time.perf_counter() - self.start
@@ -155,6 +183,9 @@ class UnitreeGo2Driver(RobotDriver):
 
         return data
 
+    def set_base_velocity(self, v_x, v_y, w):
+        self.move_client.Move(v_x, v_y, w)
+
     def check_torque_status(self) -> bool:
         raise NotImplementedError
 
@@ -171,4 +202,5 @@ class UnitreeGo2Driver(RobotDriver):
         raise NotImplementedError
 
     def shutdown_driver(self):
-        pass
+        self.move_client.Move(0.0, 0.0, 0.0)
+        self.move_client.UseRemoteCommandFromApi(False)

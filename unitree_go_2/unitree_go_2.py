@@ -14,7 +14,7 @@ from arktypes import (
     velocity_2d_t,
     float_t
 )
-from arktypes import pack
+from arktypes import pack, unpack
 from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
 from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
 
@@ -35,14 +35,13 @@ class UnitreeGo2(Robot):
                          global_config = global_config,
                          driver = driver,
                          )
-        self._msg =  None
         self.data = None
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
         self.force_pub_name = self.name + "/foot_forces"
         self.imu_pub_name = self.name + "/imu"
-        self.subscriber_name = self.name + "/joint_group_command"
+        self.subscriber_name = self.name + "/control_velocity"
         self.width_service_name = self.name + "/width"
 
         if self.sim == True:
@@ -53,14 +52,14 @@ class UnitreeGo2(Robot):
             self.width_service_name = self.width_service_name + "/sim"
 
         self.component_channels = [(self.joint_pub_name, joint_state_t),
-                              (self.force_pub_name, force_t),
-                              (self.imu_pub_name, imu_t)]
+                                   (self.force_pub_name, force_t),
+                                   (self.imu_pub_name, imu_t)]
 
         self.odometry = driver.config.get("odometry", True)
         if self.odometry:
             self.init_odometry()
 
-        self.create_subscriber(self.subscriber_name, joint_group_command_t, self._joint_group_command_callback)
+        self.create_subscriber(self.subscriber_name, velocity_2d_t, self.set_base_velocity)
         self.component_channels_init(self.component_channels)
 
         # Create robot width service
@@ -86,16 +85,6 @@ class UnitreeGo2(Robot):
             self.plotter.update(self.data)
 
     def get_robot_data(self):
-        if self._msg:
-            msg = self._msg
-            group_name = msg.name
-            cmd = msg.cmd
-            cmd_dict = {}
-            for joint, goal in zip(list(self.joint_groups[group_name]["actuated_joints"]), cmd):
-                cmd_dict[joint] = goal
-            self._msg = None
-            self.control_joint_group(group_name, cmd_dict)
-
         self.data = self._driver.get_robot_data()
 
     def pack_data(self):
@@ -117,8 +106,9 @@ class UnitreeGo2(Robot):
             packed = self.pack_data()
             self.component_multi_publisher.publish(packed)
 
-    def _joint_group_command_callback(self, t, channel_name, msg):
-        self._msg = msg
+    def set_base_velocity(self, t, channel_name, msg):
+        v_x, v_y, w = unpack.unpack_velocity_2d(msg)
+        self._driver.set_base_velocity(v_x=v_x, v_y=v_y, w=w)
 
     def send_robot_width(self, channel: str, msg: string_t) -> float_t:
         msg = pack.pack_float(self.robot_width)
