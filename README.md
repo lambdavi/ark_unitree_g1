@@ -8,7 +8,21 @@ pip install -e .
 cd ..
 pip install -r requirements.txt
 ```
+## How to Run
+You can run the Unitree Go 2 node via:
+```
+python main.py
+```
 
+If you would like to control the robot with a keyboard, start the teleoperation node:
+```
+python teleop_node.py
+
+Controls:
+W/S: Move forward/back
+A/D: Move left/right
+Q/E: Turn CCW/CW
+```
 
 ## How to View Cyclone DSS Topics
 Unitree Go 2 uses Cyclone DDS as a form of middleware, for publishing and subcribing to different topics. To view a list of all topics:
