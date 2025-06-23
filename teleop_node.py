@@ -28,7 +28,8 @@ class TeleopNode(BaseNode):
         super().__init__("teleop", path)
         robot_name = "UnitreeGo2"
         self.frequency = self.config.get("frequency", 120)
-        self.linear_velocity = self.config.get("linear_velocity", 0.3)
+        self.x_velocity = self.config.get("x_velocity", 0.3)
+        self.y_velocity = self.config.get("y_velocity", 0.3)
         self.angular_velocity = self.config.get("angular_velocity", 0.3)
 
         # Keyboard
@@ -77,13 +78,13 @@ class TeleopNode(BaseNode):
 
         # Check key states (non-blocking)
         if key == 'w':
-            v_x = self.linear_velocity
+            v_x = self.x_velocity
         if key == 's':
-            v_x = -self.linear_velocity
+            v_x = -self.x_velocity
         if key == 'a':
-            v_y = self.linear_velocity
+            v_y = self.y_velocity
         if key == 'd':
-            v_y = -self.linear_velocity
+            v_y = -self.y_velocity
         if key == 'q':
             w = self.angular_velocity
         if key == 'e':
