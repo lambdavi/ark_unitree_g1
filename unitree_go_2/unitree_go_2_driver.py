@@ -8,6 +8,8 @@ from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscri
 from unitree_sdk2py.idl.unitree_go.msg.dds_._LowState_ import LowState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._MotorState_ import MotorState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._IMUState_ import IMUState_
+from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
+from unitree_sdk2py.idl.geometry_msgs.msg.dds_._Vector3_ import Vector3_
 
 from ark.system.driver.robot_driver import RobotDriver
 from unitree_go_2.unitree_go_2_odometry import UnitreeGo2Odometry
@@ -48,9 +50,14 @@ class UnitreeGo2Driver(RobotDriver):
         else:
             ChannelFactoryInitialize(0)
 
-        self.subscriber = ChannelSubscriber("rt/lowstate", LowState_)
-        self.subscriber.Init(self.state_callback)
-        self.data = None
+        self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
+        self.lowstate_subscriber.Init(self.lowstate_callback)
+
+        self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
+        self.odom_subscriber.Init(self.odom_callback)
+
+        self.lowstate = None
+        self.unitree_odom = None
 
     def get_header(self):
         timestamp =  time.perf_counter() - self.start
@@ -105,27 +112,45 @@ class UnitreeGo2Driver(RobotDriver):
         }
         return imu
 
-    def state_callback(self, msg: LowState_) -> None:
+    def lowstate_callback(self, msg: LowState_) -> None:
         """!
         Callback function to store the incoming robot data.
 
-        @param msg LowState_ message containing the joint and force data.
+        @param msg LowState_ message containing
         @return None
         """
         joint_state = self.get_joint_state(msg.motor_state)
         force = self.get_force(msg.foot_force)
         imu = self.get_imu(msg.imu_state)
 
-        self.data = {
+        self.lowstate = {
             "joint_state": joint_state,
             "foot_force": force,
             "imu": imu
         }
 
+    def odom_callback(self, msg: Odometry_) -> None:
+        """!
+        Get the velocities from Unitree Go 2 odometry
+        """
+        twist = msg.twist.twist
+        self.unitree_odom = {"v_x": twist.linear.x,
+                             "v_y": twist.linear.y,
+                             "w": twist.angular.z}
+
     def get_robot_data(self):
-        data = copy.deepcopy(self.data)
-        if self.run_odometry:
-            v_x, v_y, w = self.odometry.run(**data)
+        data = {}
+        lowstate = copy.deepcopy(self.lowstate)
+        unitree_odom = copy.deepcopy(self.unitree_odom)
+
+        if lowstate is not None:
+            data.update(lowstate)
+
+        if unitree_odom is not None:
+            data["unitree_odometry"] = unitree_odom
+
+        if self.run_odometry and lowstate is not None:
+            v_x, v_y, w = self.odometry.run(**lowstate)
             data["odometry"] = {"v_x": v_x, "v_y": v_y, "w": w}
 
         return data

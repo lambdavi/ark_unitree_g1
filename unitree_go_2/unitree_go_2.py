@@ -16,6 +16,7 @@ from arktypes import (
 )
 from arktypes import pack
 from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
+from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
 
 
 @dataclass
@@ -35,6 +36,7 @@ class UnitreeGo2(Robot):
                          driver = driver,
                          )
         self._msg =  None
+        self.data = None
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
@@ -50,23 +52,38 @@ class UnitreeGo2(Robot):
             self.subscriber_name = self.subscriber_name + "/sim"
             self.width_service_name = self.width_service_name + "/sim"
 
-        component_channels = [(self.joint_pub_name, joint_state_t),
+        self.component_channels = [(self.joint_pub_name, joint_state_t),
                               (self.force_pub_name, force_t),
                               (self.imu_pub_name, imu_t)]
 
         self.odometry = driver.config.get("odometry", True)
         if self.odometry:
-            self.odometry_pub_name = self.name + "/odometry"
-            if self.sim:
-                self.odometry_pub_name = self.odometry_pub_name + "/sim"
-            component_channels.append((self.odometry_pub_name, velocity_2d_t))
+            self.init_odometry()
 
         self.create_subscriber(self.subscriber_name, joint_group_command_t, self._joint_group_command_callback)
-        self.component_channels_init(component_channels)
+        self.component_channels_init(self.component_channels)
 
         # Create robot width service
         self.robot_width = driver.config.get("width", 0.31)
         self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
+
+    def init_odometry(self):
+        # Init publish channel
+        self.odometry_pub_name = self.name + "/odometry"
+        if self.sim:
+            self.odometry_pub_name = self.odometry_pub_name + "/sim"
+        self.component_channels.append((self.odometry_pub_name, velocity_2d_t))
+
+        # Init plotter
+        self.show = self._driver.config.get("show_odometry", False)
+        if self.show:
+            frequency = self._driver.config.get("show_frequency", 30)
+            self.plotter = UnitreeGo2Plotter()
+            self.create_stepper(frequency, self.update_plotter)
+
+    def update_plotter(self):
+        if self.data is not None:
+            self.plotter.update(self.data)
 
     def get_robot_data(self):
         if self._msg:
@@ -79,26 +96,25 @@ class UnitreeGo2(Robot):
             self._msg = None
             self.control_joint_group(group_name, cmd_dict)
 
-        data = self._driver.get_robot_data()
-        return data
+        self.data = self._driver.get_robot_data()
 
-    def pack_data(self, data):
-        joint_msg = pack.pack_joint_state(**data["joint_state"])
-        force_msg = pack.pack_force(**data["foot_force"])
-        imu_msg = pack.pack_imu(**data["imu"])
+    def pack_data(self):
+        joint_msg = pack.pack_joint_state(**self.data["joint_state"])
+        force_msg = pack.pack_force(**self.data["foot_force"])
+        imu_msg = pack.pack_imu(**self.data["imu"])
         msgs = {self.joint_pub_name: joint_msg,
                 self.force_pub_name: force_msg,
                 self.imu_pub_name: imu_msg}
 
         if self.odometry:
-            odom_msg = pack.pack_velocity_2d(**data["odometry"])
+            odom_msg = pack.pack_velocity_2d(**self.data["odometry"])
             msgs[self.odometry_pub_name] = odom_msg
         return msgs
 
     def step_component(self):
-        data = self.get_robot_data()
-        if data is not None:
-            packed = self.pack_data(data)
+        self.get_robot_data()
+        if self.data is not None:
+            packed = self.pack_data()
             self.component_multi_publisher.publish(packed)
 
     def _joint_group_command_callback(self, t, channel_name, msg):
@@ -107,3 +123,9 @@ class UnitreeGo2(Robot):
     def send_robot_width(self, channel: str, msg: string_t) -> float_t:
         msg = pack.pack_float(self.robot_width)
         return msg
+
+    def suspend_node(self):
+        super().suspend_node()
+        if self.odometry:
+            if self.show:
+                self.plotter.stop()
