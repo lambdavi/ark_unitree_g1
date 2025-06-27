@@ -5,7 +5,11 @@ config:
   network_interface: "enx000ec6bdee34"       # (Optional) Network interface to use
   frequency: 240  # default is 240Hz
   width: 0.31   # Width of the robot (m)
-  odometry: True
+  control: "joint_space"
+  joint_space_control:
+    Kp: 60.0               # Joint stiffness coefficient
+    Kd: 5.0                # Joint damping coefficient
+  odometry: False
   show_odometry: False
   show_frequency: 30
   contact_force_threshold: 20.0

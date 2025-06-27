@@ -5,12 +5,13 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List
 
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
-from unitree_sdk2py.idl.unitree_go.msg.dds_._LowState_ import LowState_
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber, ChannelPublisher
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._MotorState_ import MotorState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._IMUState_ import IMUState_
 from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
-from unitree_sdk2py.idl.geometry_msgs.msg.dds_._Vector3_ import Vector3_
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
 from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesAvoidClient
 
 from ark.tools.log import log
@@ -32,6 +33,7 @@ class UnitreeGo2Driver(RobotDriver):
         super().__init__(component_name, component_config, False)
         self.network_interface = self.config.get("network_interface", "")
         self.run_odometry = self.config.get("odometry", True)
+        self.control = self.config.get("control", "task_space")
 
         if self.run_odometry:
             class_path = self.config.get("class_dir", None)
@@ -61,6 +63,20 @@ class UnitreeGo2Driver(RobotDriver):
         self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
         self.odom_subscriber.Init(self.odom_callback)
 
+        # Set control mode
+        if self.control == "task_space":
+            self.init_task_space_control()
+        elif self.control == "joint_space":
+            self.init_joint_space_control()
+        else:
+            log.error(f"Control mode: {self.control} not implemented")
+            raise NotImplementedError
+
+        self.lowstate = None
+        self.unitree_odom = None
+
+    def init_task_space_control(self):
+
         # Create obstacle avoidance client for moving
         self.move_client = ObstaclesAvoidClient()
         self.move_client.SetTimeout(3.0)
@@ -80,12 +96,22 @@ class UnitreeGo2Driver(RobotDriver):
         self.move_client.UseRemoteCommandFromApi(True)
         time.sleep(0.5)
         log.ok("Set to use remote commands from Unitree SDK")
+        log.ok("Initialized Unitree Go 2 Control Mode: Task Space Control")
 
-        self.lowstate = None
-        self.unitree_odom = None
-        self.v_x = 0.0
-        self.v_y = 0.0
-        self.w = 0.0
+    def init_joint_space_control(self):
+        # Create publisher
+        self.lowcmd_publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
+        self.lowcmd_publisher.Init()
+
+        # Create joint space control config
+        default_joint_space_control_config = {
+            "Kp": 60.0,
+            "Kd": 5.0
+        }
+        self.joint_space_control_config = self.config.get("joint_space_control", default_joint_space_control_config)
+        self.Kp = self.joint_space_control_config["Kp"]
+        self.Kd = self.joint_space_control_config["Kd"]
+        log.ok("Initialized Unitree Go 2 Control Mode: Joint Space Control")
 
     def get_header(self):
         timestamp =  time.perf_counter() - self.start
@@ -202,5 +228,6 @@ class UnitreeGo2Driver(RobotDriver):
         raise NotImplementedError
 
     def shutdown_driver(self):
-        self.move_client.Move(0.0, 0.0, 0.0)
-        self.move_client.UseRemoteCommandFromApi(False)
+        if self.control == "task_space":
+            self.move_client.Move(0.0, 0.0, 0.0)
+            self.move_client.UseRemoteCommandFromApi(False)
