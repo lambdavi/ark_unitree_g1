@@ -35,14 +35,24 @@ class UnitreeGo2(Robot):
                          global_config = global_config,
                          driver = driver,
                          )
-        self.data = None
+        self.state = None
+
+        control_mode = driver.config.get("control", "task_space")
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
         self.force_pub_name = self.name + "/foot_forces"
         self.imu_pub_name = self.name + "/imu"
-        self.subscriber_name = self.name + "/control_velocity"
         self.width_service_name = self.name + "/width"
+
+        if control_mode == "task_space":
+            self.subscriber_name = self.name + "/control_velocity"
+            self.subscriber_type = velocity_2d_t
+            subscriber_callback = self.control_robot_task_space
+        elif control_mode == "joint_space":
+            self.subscriber_name = self.name + "/joint_group_command"
+            self.subscriber_type = joint_group_command_t
+            subscriber_callback = self.control_robot_joint_space
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
@@ -59,7 +69,7 @@ class UnitreeGo2(Robot):
         if self.odometry:
             self.init_odometry()
 
-        self.create_subscriber(self.subscriber_name, velocity_2d_t, self.set_base_velocity)
+        self.create_subscriber(self.subscriber_name, self.subscriber_type, subscriber_callback)
         self.component_channels_init(self.component_channels)
 
         # Create robot width service
@@ -81,34 +91,41 @@ class UnitreeGo2(Robot):
             self.create_stepper(frequency, self.update_plotter)
 
     def update_plotter(self):
-        if self.data is not None:
-            self.plotter.update(self.data)
+        if self.state is not None:
+            self.plotter.update(self.state)
 
     def get_robot_data(self):
-        self.data = self._driver.get_robot_data()
+        pass
+
+    def get_state(self):
+        self.state = self._driver.get_state()
 
     def pack_data(self):
-        joint_msg = pack.pack_joint_state(**self.data["joint_state"])
-        force_msg = pack.pack_force(**self.data["foot_force"])
-        imu_msg = pack.pack_imu(**self.data["imu"])
+        joint_msg = pack.pack_joint_state(**self.state["joint_state"])
+        force_msg = pack.pack_force(**self.state["foot_force"])
+        imu_msg = pack.pack_imu(**self.state["imu"])
         msgs = {self.joint_pub_name: joint_msg,
                 self.force_pub_name: force_msg,
                 self.imu_pub_name: imu_msg}
 
         if self.odometry:
-            odom_msg = pack.pack_velocity_2d(**self.data["odometry"])
+            odom_msg = pack.pack_velocity_2d(**self.state["odometry"])
             msgs[self.odometry_pub_name] = odom_msg
         return msgs
 
     def step_component(self):
-        self.get_robot_data()
-        if self.data is not None:
+        self.get_state()
+        if self.state is not None:
             packed = self.pack_data()
             self.component_multi_publisher.publish(packed)
 
-    def set_base_velocity(self, t, channel_name, msg):
+    def control_robot_joint_space(self, t, channel_name, msg):
+        joint_group_command, _ = unpack.unpack_joint_group_command(msg)
+        self._driver.control_robot_joint_space(joint_group_command)
+
+    def control_robot_task_space(self, t, channel_name, msg):
         v_x, v_y, w = unpack.unpack_velocity_2d(msg)
-        self._driver.set_base_velocity(v_x=v_x, v_y=v_y, w=w)
+        self._driver.control_robot_task_space(v_x=v_x, v_y=v_y, w=w)
 
     def send_robot_width(self, channel: str, msg: string_t) -> float_t:
         msg = pack.pack_float(self.robot_width)

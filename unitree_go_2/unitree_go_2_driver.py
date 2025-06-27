@@ -13,6 +13,7 @@ from unitree_sdk2py.idl.unitree_go.msg.dds_._IMUState_ import IMUState_
 from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
 from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesAvoidClient
+from unitree_sdk2py.utils.crc import CRC
 
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
@@ -34,6 +35,13 @@ class UnitreeGo2Driver(RobotDriver):
         self.network_interface = self.config.get("network_interface", "")
         self.run_odometry = self.config.get("odometry", True)
         self.control = self.config.get("control", "task_space")
+        self.joint_names = [
+            "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
+            "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
+            "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
+            "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
+        ]
+        self.num_joints = len(self.joint_names)
 
         if self.run_odometry:
             class_path = self.config.get("class_dir", None)
@@ -99,24 +107,66 @@ class UnitreeGo2Driver(RobotDriver):
         log.ok("Initialized Unitree Go 2 Control Mode: Task Space Control")
 
     def init_joint_space_control(self):
+        # Values to indicate to not move the joint
+        PosStopF = 2.146e9
+        VelStopF = 16000.0
+
         # Create publisher
         self.lowcmd_publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
         self.lowcmd_publisher.Init()
 
+        # Create default joint limits. (Taken from https://support.unitree.com/home/en/developer and subtracted 4 degrees)
+        HIP_MIN = -0.767945
+        HIP_MAX = 0.767945
+        THIGH_MIN = -1.50098
+        THIGH_MAX = 3.42085
+        CALF_MIN = -2.6529
+        CALF_MAX = -0.767945
+        default_joint_min = [
+            HIP_MIN, THIGH_MIN, CALF_MIN,
+            HIP_MIN, THIGH_MIN, CALF_MIN,
+            HIP_MIN, THIGH_MIN, CALF_MIN,
+        ]
+        default_joint_max = [
+            HIP_MAX, THIGH_MAX, CALF_MAX,
+            HIP_MAX, THIGH_MAX, CALF_MAX,
+            HIP_MAX, THIGH_MAX, CALF_MAX,
+        ]
         # Create joint space control config
         default_joint_space_control_config = {
             "Kp": 60.0,
-            "Kd": 5.0
+            "Kd": 5.0,
+            "joint_min": default_joint_min,
+            "joint_max": default_joint_max
         }
         self.joint_space_control_config = self.config.get("joint_space_control", default_joint_space_control_config)
         self.Kp = self.joint_space_control_config["Kp"]
         self.Kd = self.joint_space_control_config["Kd"]
+        self.joint_min = np.array(self.joint_space_control_config["joint_min"])
+        self.joint_max = np.array(self.joint_space_control_config["joint_max"])
+
+        # Create default joint command
+        self.default_joint_cmd = unitree_go_msg_dds__LowCmd_()
+        self.default_joint_cmd.head[0] = 0xFE
+        self.default_joint_cmd.head[1] = 0xEF
+        self.default_joint_cmd.level_flag = 0xFF
+        self.default_joint_cmd.gpio = 0
+        for i in range(20):
+            self.default_joint_cmd.motor_cmd[i].mode = 0x01  # (PMSM) mode
+            self.default_joint_cmd.motor_cmd[i].q = PosStopF
+            self.default_joint_cmd.motor_cmd[i].kp = 0
+            self.default_joint_cmd.motor_cmd[i].dq = VelStopF
+            self.default_joint_cmd.motor_cmd[i].kd = 0
+            self.default_joint_cmd.motor_cmd[i].tau = 0
+
+        self.crc = CRC()
         log.ok("Initialized Unitree Go 2 Control Mode: Joint Space Control")
 
     def get_header(self):
         timestamp =  time.perf_counter() - self.start
         sec = int(timestamp)
         nsec = int((timestamp - sec) * 1e9)
+
         stamp = {"sec": sec,
                  "nsec":  nsec}
         header = {"seq": self.seq,
@@ -127,20 +177,14 @@ class UnitreeGo2Driver(RobotDriver):
 
     def get_joint_state(self, msgs: List[MotorState_]) ->  Dict[str, Any]:
         header = self.get_header()
-        names = [
-            "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
-            "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
-            "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
-            "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
-        ]
         positions, velocities, efforts = [], [], []
-        for i in range(len(names)):
+        for i in range(len(self.joint_names)):
             positions.append(msgs[i].q)
             velocities.append(msgs[i].dq)
             efforts.append(msgs[i].tau_est)
 
         joint_state = {"header": header,
-                       "name": names,
+                       "name": self.joint_names,
                        "position": np.array(positions),
                        "velocity": np.array(velocities),
                        "effort": np.array(efforts)
@@ -192,25 +236,56 @@ class UnitreeGo2Driver(RobotDriver):
                              "v_y": twist.linear.y,
                              "w": twist.angular.z}
 
-    def get_robot_data(self):
-        data = {}
+    def get_state(self):
+        state = {}
         lowstate = copy.deepcopy(self.lowstate)
         unitree_odom = copy.deepcopy(self.unitree_odom)
 
         if lowstate is not None:
-            data.update(lowstate)
+            state.update(lowstate)
 
         if unitree_odom is not None:
-            data["unitree_odometry"] = unitree_odom
+            state["unitree_odometry"] = unitree_odom
 
         if self.run_odometry and lowstate is not None:
             v_x, v_y, w = self.odometry.run(**lowstate)
-            data["odometry"] = {"v_x": v_x, "v_y": v_y, "w": w}
+            state["odometry"] = {"v_x": v_x, "v_y": v_y, "w": w}
 
-        return data
+        return state
 
-    def set_base_velocity(self, v_x, v_y, w):
+    def control_robot_task_space(self, v_x, v_y, w):
+        if self.control != "task_space":
+            log.error(f"[Control Mode Error] Expected 'task_space' but got '{self.control}'. Cannot execute task-space velocity command.")
+            return
+
         self.move_client.Move(v_x, v_y, w)
+
+    def control_robot_joint_space(self, joint_angles):
+        if self.control != "joint_space":
+            log.error(f"[Control Mode Error] Expected 'joint_space' but got '{self.control}'. Cannot execute joint-space command.")
+            return
+
+        if len(joint_angles) != self.num_joints:
+            log.error(f"Invalid joint command length: expected {self.num_joints}, got {len(joint_angles)}")
+            return
+
+        # Clip to joint limits
+        joint_angles = np.array(joint_angles)
+        joint_angles = np.clip(joint_angles, self.joint_min, self.joint_max)
+
+        # Construct command
+        joint_cmd = copy.deepcopy(self.default_joint_cmd)
+        joint_cmd.crc = self.crc.Crc(joint_cmd)
+
+        for i in range(self.num_joints):
+            joint_cmd.motor_cmd[i].q = joint_angles[i]
+            joint_cmd.motor_cmd[i].dq = 0.0
+            joint_cmd.motor_cmd[i].kp = self.Kp
+            joint_cmd.motor_cmd[i].kd = self.Kd
+            joint_cmd.motor_cmd[i].tau = 0
+
+        # Send command to Unitree Go 2
+        self.lowcmd_publisher.Write(joint_cmd)
 
     def check_torque_status(self) -> bool:
         raise NotImplementedError
