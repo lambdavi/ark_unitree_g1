@@ -14,15 +14,15 @@ from arktypes import (
     velocity_2d_t,
     float_t
 )
-from arktypes import pack, unpack
-from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
-from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
-
+from arktypes.utils import pack, unpack
+# from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
+# from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
+from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 
 @dataclass
 class Drivers(Enum):
-    PYBULLET_DRIVER = None
-    DRIVER = UnitreeGo2Driver
+    PYBULLET_DRIVER = BulletRobotDriver
+    # DRIVER = UnitreeGo2Driver
 
 class UnitreeGo2(Robot):
     def __init__(self,
@@ -52,7 +52,7 @@ class UnitreeGo2(Robot):
         elif control_mode == "joint_space":
             self.subscriber_name = self.name + "/joint_group_command"
             self.subscriber_type = joint_group_command_t
-            subscriber_callback = self.control_robot_joint_space
+            subscriber_callback = self._joint_group_command_callback
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
@@ -61,9 +61,9 @@ class UnitreeGo2(Robot):
             self.subscriber_name = self.subscriber_name + "/sim"
             self.width_service_name = self.width_service_name + "/sim"
 
-        self.component_channels = [(self.joint_pub_name, joint_state_t),
-                                   (self.force_pub_name, force_t),
-                                   (self.imu_pub_name, imu_t)]
+        self.component_channels = {self.joint_pub_name: joint_state_t,
+                                   self.force_pub_name: force_t,
+                                   self.imu_pub_name: imu_t}
 
         self.odometry = driver.config.get("odometry", True)
         if self.odometry:
@@ -75,6 +75,7 @@ class UnitreeGo2(Robot):
         # Create robot width service
         self.robot_width = driver.config.get("width", 0.31)
         self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
+        self.joint_group_command = None
 
     def init_odometry(self):
         # Init publish channel
@@ -97,31 +98,38 @@ class UnitreeGo2(Robot):
     def get_robot_data(self):
         pass
 
+    def control_robot(self):
+        if self.joint_group_command:
+            cmd_dict = {}
+            group_name = self.joint_group_command['name']
+            for joint, goal in zip(list(self.joint_groups[self.joint_group_command['name']]["actuated_joints"]), self.joint_group_command['cmd']):
+                cmd_dict[joint] = goal
+            self._joint_cmd_msg = None
+            control_mode = self.joint_groups[group_name]["control_mode"]
+            self.control_joint_group(control_mode, cmd_dict)
+
     def get_state(self):
-        self.state = self._driver.get_state()
+        # self.state = self.get_joint_positions()
+        return self.get_joint_positions()
+    
+    def pack_data(self, state):
+        msg = joint_state_t()
+        msg.n = len(state)
+        msg.name = list(state.keys())
+        msg.position = list(state.values())
+        msg.velocity = [0.0] * msg.n
+        msg.effort = [0.0] * msg.n
 
-    def pack_data(self):
-        joint_msg = pack.pack_joint_state(**self.state["joint_state"])
-        force_msg = pack.pack_force(**self.state["foot_force"])
-        imu_msg = pack.pack_imu(**self.state["imu"])
-        msgs = {self.joint_pub_name: joint_msg,
-                self.force_pub_name: force_msg,
-                self.imu_pub_name: imu_msg}
+        return {
+            self.joint_pub_name: msg
+        }
 
-        if self.odometry:
-            odom_msg = pack.pack_velocity_2d(**self.state["odometry"])
-            msgs[self.odometry_pub_name] = odom_msg
-        return msgs
-
-    def step_component(self):
-        self.get_state()
-        if self.state is not None:
-            packed = self.pack_data()
-            self.component_multi_publisher.publish(packed)
-
-    def control_robot_joint_space(self, t, channel_name, msg):
-        joint_group_command, _ = unpack.unpack_joint_group_command(msg)
-        self._driver.control_robot_joint_space(joint_group_command)
+    def _joint_group_command_callback(self, t, channel_name, msg):
+        cmd, name = unpack.joint_group_command(msg)
+        self.joint_group_command = {
+            "cmd": cmd,
+            "name": name,
+        }
 
     def control_robot_task_space(self, t, channel_name, msg):
         v_x, v_y, w = unpack.unpack_velocity_2d(msg)
@@ -136,3 +144,6 @@ class UnitreeGo2(Robot):
         if self.odometry:
             if self.show:
                 self.plotter.stop()
+
+if __name__ == "__main__":
+    raise NotImplementedError("This robot is not meant to be run as a standalone node. Please use the ark simulator")
