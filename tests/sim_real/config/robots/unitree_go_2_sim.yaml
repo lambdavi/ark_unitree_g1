@@ -1,4 +1,4 @@
-name: "unitree_go_2"
+name: "unitree_go_2_sim"
 config:
   urdf_path: "urdf/urdf/go2_description.urdf"
   class_dir: "/home/sarthakdas/Ark/ark_unitree_go_2/unitree_go_2"

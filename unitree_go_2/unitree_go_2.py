@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
-
+from ark.client.comm_infrastructure.base_node import main
 from ark.system.component.robot import Robot
 from ark.system.driver.robot_driver import RobotDriver
 from arktypes import (
@@ -15,14 +15,14 @@ from arktypes import (
     float_t
 )
 from arktypes.utils import pack, unpack
-# from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
+from unitree_go_2_driver import UnitreeGo2Driver
 # from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 
 @dataclass
 class Drivers(Enum):
     PYBULLET_DRIVER = BulletRobotDriver
-    # DRIVER = UnitreeGo2Driver
+    DRIVER = UnitreeGo2Driver
 
 class UnitreeGo2(Robot):
     def __init__(self,
@@ -77,27 +77,6 @@ class UnitreeGo2(Robot):
         self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
         self.joint_group_command = None
 
-    def init_odometry(self):
-        # Init publish channel
-        self.odometry_pub_name = self.name + "/odometry"
-        if self.sim:
-            self.odometry_pub_name = self.odometry_pub_name + "/sim"
-        self.component_channels.append((self.odometry_pub_name, velocity_2d_t))
-
-        # Init plotter
-        self.show = self._driver.config.get("show_odometry", False)
-        if self.show:
-            frequency = self._driver.config.get("show_frequency", 30)
-            self.plotter = UnitreeGo2Plotter()
-            self.create_stepper(frequency, self.update_plotter)
-
-    def update_plotter(self):
-        if self.state is not None:
-            self.plotter.update(self.state)
-
-    def get_robot_data(self):
-        pass
-
     def control_robot(self):
         if self.joint_group_command:
             cmd_dict = {}
@@ -109,7 +88,6 @@ class UnitreeGo2(Robot):
             self.control_joint_group(control_mode, cmd_dict)
 
     def get_state(self):
-        # self.state = self.get_joint_positions()
         return self.get_joint_positions()
     
     def pack_data(self, state):
@@ -145,5 +123,9 @@ class UnitreeGo2(Robot):
             if self.show:
                 self.plotter.stop()
 
+CONFIG_PATH = "/home/sarthakdas/Ark/ark_unitree_go_2/tests/go2_pybullet_sim/config/global_config.yaml"
 if __name__ == "__main__":
-    raise NotImplementedError("This robot is not meant to be run as a standalone node. Please use the ark simulator")
+    # raise NotImplementedError("This robot is not meant to be run as a standalone node. Please use the ark simulator")
+    name = "unitree_go_2"
+    driver = UnitreeGo2Driver(name, CONFIG_PATH)
+    main(UnitreeGo2, name, CONFIG_PATH, driver)
