@@ -14,6 +14,8 @@ from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
 from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesAvoidClient
 from unitree_sdk2py.utils.crc import CRC
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
+from unitree_sdk2py.go2.sport.sport_client import SportClient
 
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
@@ -34,12 +36,22 @@ class UnitreeGo2Driver(RobotDriver):
         super().__init__(component_name, component_config, False)
         self.network_interface = self.config.get("network_interface", "")
 
+        # TODO: Get this from the config
         self.joint_names = [
             "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
             "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
             "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
             "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
         ]
+        # TODO; Add high level control
+
+        # TODO: Add camera
+
+        # TODO: Add odometry
+
+        # TODO: Add IMU
+
+        # TODO: Add Lidar
         self.num_joints = len(self.joint_names)
 
         if self.network_interface != "":
@@ -47,25 +59,35 @@ class UnitreeGo2Driver(RobotDriver):
         else:
             ChannelFactoryInitialize(0)
 
+        msc = MotionSwitcherClient()
+        msc.Init()
+        msc.ReleaseMode()
+
+        sc = SportClient()
+        sc.Init()
+        sc.StandDown()
 
         # Get subscribers
         self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
         self.lowstate_subscriber.Init(self.LowStateMessageHandler, 10)
 
+        self.lowstate_publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
+        self.lowstate_publisher.Init()
+        
         # self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
         # self.odom_subscriber.Init(self.odom_callback)
 
         self.joint_positions = [0.0] * self.num_joints
-        # self.unitree_odom = None
 
     def LowStateMessageHandler(self, msg: LowState_):
         self.low_state = msg
         self.joint_positions = [msg.motor_state[i].q for i in range(12)]
         # print("JP:", self.joint_positions)
-        
+
 
     def pass_joint_positions(self, joints: List[str]) -> Dict[str, float]:
         # pack self.joint_positions into a dictionary
+        # TODO: Check this works
         joint_positions = {}
         for joint in joints:
             if joint in self.joint_names:
@@ -73,9 +95,9 @@ class UnitreeGo2Driver(RobotDriver):
                 joint_positions[joint] = self.joint_positions[index]
             else:
                 log.error(f"Joint {joint} not found in joint names.")
-        print("Joint Positions:", joint_positions)
+        # print("Joint Positions:", joint_positions)
         return joint_positions
-        
+
 
     def pass_joint_velocities(self, joints: List[str]) -> Dict[str, float]:
         raise NotImplementedError
@@ -83,9 +105,25 @@ class UnitreeGo2Driver(RobotDriver):
     def pass_joint_efforts(self, joints: List[str]) -> Dict[str, float]:
         raise NotImplementedError
 
-    def pass_joint_group_control_cmd(self, control_mode: str, joints: List[str], cmd: Dict[str, float], **kwargs) -> None:
-        raise NotImplementedError
-    
+    def pass_joint_group_control_cmd(self, control_mode: str, cmd: Dict[str, float], **kwargs) -> None:
+        low_cmd = unitree_go_msg_dds__LowCmd_()
+        print("Control Mode:", control_mode)
+        print("Command:", cmd)
+        crc = CRC()
+        if control_mode == "position":
+            for i in range(12):
+                low_cmd.motor_cmd[i].mode = 0x01
+                low_cmd.motor_cmd[i].q = 0
+                low_cmd.motor_cmd[i].dq = 0.0
+                low_cmd.motor_cmd[i].kp = 60.0
+                low_cmd.motor_cmd[i].kd = 5.0
+                low_cmd.motor_cmd[i].tau = 0.0
+        # velocity control
+
+        # torque control?
+            low_cmd.crc = crc.Crc(low_cmd)
+            self.lowstate_publisher.Write(low_cmd)
+
     def check_torque_status(self, joints: List[str]) -> Dict[str, bool]:
         raise NotImplementedError
 
