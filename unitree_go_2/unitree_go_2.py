@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
+import numpy as np
 from ark.client.comm_infrastructure.base_node import main
 from ark.system.component.robot import Robot
 from ark.system.driver.robot_driver import RobotDriver
@@ -12,7 +13,8 @@ from arktypes import (
     string_t,
     pose_2d_t,
     velocity_2d_t,
-    float_t
+    float_t,
+    image_t
 )
 from arktypes.utils import pack, unpack
 from unitree_go_2_driver import UnitreeGo2Driver
@@ -41,6 +43,7 @@ class UnitreeGo2(Robot):
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
+        self.camera_pub_name = self.name + "/camera"
         self.force_pub_name = self.name + "/foot_forces"
         self.imu_pub_name = self.name + "/imu"
         self.width_service_name = self.name + "/width"
@@ -56,14 +59,18 @@ class UnitreeGo2(Robot):
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
+            self.camera_pub_name = self.camera_pub_name + "/sim"
             self.force_pub_name = self.force_pub_name + "/sim"
             self.imu_pub_name = self.imu_pub_name + "/sim"
             self.subscriber_name = self.subscriber_name + "/sim"
             self.width_service_name = self.width_service_name + "/sim"
 
         self.component_channels = {self.joint_pub_name: joint_state_t,
+                                   self.camera_pub_name: image_t,
                                    self.force_pub_name: force_t,
                                    self.imu_pub_name: imu_t}
+
+        self.camera_publisher = self.create_publisher(self.camera_pub_name + "test", image_t)
 
         self.odometry = driver.config.get("odometry", True)
         if self.odometry:
@@ -75,7 +82,13 @@ class UnitreeGo2(Robot):
         # Create robot width service
         self.robot_width = driver.config.get("width", 0.31)
         self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
+
         self.joint_group_command = None
+
+        self.image = np.zeros((480,640,3), dtype=np.uint8)
+
+        # create 2 steps for getting joint state and camera state
+        self.create_stepper(100, self.get_camera_data)
 
     def control_robot(self):
         if self.joint_group_command:
@@ -87,19 +100,39 @@ class UnitreeGo2(Robot):
             control_mode = self.joint_groups[group_name]["control_mode"]
             self.control_joint_group(control_mode, cmd_dict)
 
+        self.joint_group_command = None
+
+    def get_camera_data(self):
+        print("getting camera data")
+        self.image = self._driver.pass_camera_image()
+        image_msg = pack.image(self.image, "front camera")
+        self.camera_publisher.publish(image_msg)
+
     def get_state(self):
-        return self.get_joint_positions()
+        joint_positions = self.get_joint_positions()
+        image = self.image
+        
+        return {
+            "joint_positions": joint_positions,
+            "image": image
+        }
     
     def pack_data(self, state):
+        joint_positions = state["joint_positions"]
+        image = state["image"]
+
         msg = joint_state_t()
-        msg.n = len(state)
-        msg.name = list(state.keys())
-        msg.position = list(state.values())
+        msg.n = len(joint_positions)
+        msg.name = list(joint_positions.keys())
+        msg.position = list(joint_positions.values())
         msg.velocity = [0.0] * msg.n
         msg.effort = [0.0] * msg.n
 
+        image_msg = pack.image(self.image, "front camera")
+
         return {
-            self.joint_pub_name: msg
+            self.joint_pub_name: msg,
+            self.camera_pub_name: image_msg,
         }
 
     def _joint_group_command_callback(self, t, channel_name, msg):

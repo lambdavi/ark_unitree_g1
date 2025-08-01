@@ -4,6 +4,7 @@ import copy
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List
+import cv2
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber, ChannelPublisher
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
@@ -16,6 +17,7 @@ from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesA
 from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 from unitree_sdk2py.go2.sport.sport_client import SportClient
+from unitree_sdk2py.go2.video.video_client import VideoClient
 
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
@@ -43,9 +45,19 @@ class UnitreeGo2Driver(RobotDriver):
             "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
             "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
         ]
+
+        if self.network_interface != "":
+            ChannelFactoryInitialize(0, self.network_interface)
+        else:
+            ChannelFactoryInitialize(0)
+        
         # TODO; Add high level control
 
         # TODO: Add camera
+        self.video_client = VideoClient()  # Create a video client
+        self.video_client.SetTimeout(3.0)
+        self.video_client.Init()
+
 
         # TODO: Add odometry
 
@@ -54,10 +66,7 @@ class UnitreeGo2Driver(RobotDriver):
         # TODO: Add Lidar
         self.num_joints = len(self.joint_names)
 
-        if self.network_interface != "":
-            ChannelFactoryInitialize(0, self.network_interface)
-        else:
-            ChannelFactoryInitialize(0)
+
 
         msc = MotionSwitcherClient()
         msc.Init()
@@ -110,20 +119,36 @@ class UnitreeGo2Driver(RobotDriver):
         print("Control Mode:", control_mode)
         print("Command:", cmd)
         crc = CRC()
+        # extract all the cmd as a list
+        cmd_list = list(cmd.values())
+
         if control_mode == "position":
             for i in range(12):
                 low_cmd.motor_cmd[i].mode = 0x01
-                low_cmd.motor_cmd[i].q = 0
+                low_cmd.motor_cmd[i].q = cmd_list[i]
                 low_cmd.motor_cmd[i].dq = 0.0
                 low_cmd.motor_cmd[i].kp = 60.0
                 low_cmd.motor_cmd[i].kd = 5.0
                 low_cmd.motor_cmd[i].tau = 0.0
         # velocity control
 
-        # torque control?
-            low_cmd.crc = crc.Crc(low_cmd)
-            self.lowstate_publisher.Write(low_cmd)
+        # torque control
 
+        # send the command to the robot dog
+        low_cmd.crc = crc.Crc(low_cmd)
+        self.lowstate_publisher.Write(low_cmd)
+
+    
+    def pass_camera_image(self):
+        code, data = self.video_client.GetImageSample()
+
+        if code != 0:
+            log.error("Failed to get Image")
+            return np.zeros((480,640,3), dtype=np.uint8)
+        image_data = np.frombuffer(bytes(data), dtype=np.uint8)
+        image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
+        return image
+    
     def check_torque_status(self, joints: List[str]) -> Dict[str, bool]:
         raise NotImplementedError
 
