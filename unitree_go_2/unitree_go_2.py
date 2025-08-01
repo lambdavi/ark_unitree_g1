@@ -20,6 +20,7 @@ from arktypes.utils import pack, unpack
 from unitree_go_2_driver import UnitreeGo2Driver
 # from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
+from ark.tools.log import log
 
 @dataclass
 class Drivers(Enum):
@@ -44,51 +45,31 @@ class UnitreeGo2(Robot):
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
         self.camera_pub_name = self.name + "/camera"
-        self.force_pub_name = self.name + "/foot_forces"
-        self.imu_pub_name = self.name + "/imu"
-        self.width_service_name = self.name + "/width"
 
-        if control_mode == "task_space":
-            self.subscriber_name = self.name + "/control_velocity"
-            self.subscriber_type = velocity_2d_t
-            subscriber_callback = self.control_robot_task_space
-        elif control_mode == "joint_space":
+        if control_mode == "joint_space":
             self.subscriber_name = self.name + "/joint_group_command"
             self.subscriber_type = joint_group_command_t
             subscriber_callback = self._joint_group_command_callback
+            self.create_subscriber(self.subscriber_name, self.subscriber_type, subscriber_callback)
+        else: 
+            log.error("Control mode not supported: " + control_mode)
+            self.kill_node()
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
             self.camera_pub_name = self.camera_pub_name + "/sim"
-            self.force_pub_name = self.force_pub_name + "/sim"
-            self.imu_pub_name = self.imu_pub_name + "/sim"
-            self.subscriber_name = self.subscriber_name + "/sim"
-            self.width_service_name = self.width_service_name + "/sim"
 
-        self.component_channels = {self.joint_pub_name: joint_state_t,
-                                   self.camera_pub_name: image_t,
-                                   self.force_pub_name: force_t,
-                                   self.imu_pub_name: imu_t}
+        self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
+        self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
 
-        self.camera_publisher = self.create_publisher(self.camera_pub_name + "test", image_t)
-
-        self.odometry = driver.config.get("odometry", True)
-        if self.odometry:
-            self.init_odometry()
-
-        self.create_subscriber(self.subscriber_name, self.subscriber_type, subscriber_callback)
-        self.component_channels_init(self.component_channels)
-
-        # Create robot width service
-        self.robot_width = driver.config.get("width", 0.31)
-        self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
-
+    
         self.joint_group_command = None
-
         self.image = np.zeros((480,640,3), dtype=np.uint8)
+        self.joint_positions = [0,0,0,0,0,0,0,0,0,0,0,0]
 
         # create 2 steps for getting joint state and camera state
-        self.create_stepper(100, self.get_camera_data)
+        self.create_stepper(60, self.get_camera_data)
+        self.create_stepper(240, self.get_joint_state)
 
     def control_robot(self):
         if self.joint_group_command:
@@ -103,37 +84,33 @@ class UnitreeGo2(Robot):
         self.joint_group_command = None
 
     def get_camera_data(self):
-        print("getting camera data")
+        # print("getting camera data")
         self.image = self._driver.pass_camera_image()
-        image_msg = pack.image(self.image, "front camera")
-        self.camera_publisher.publish(image_msg)
+        try:
+            image_msg = pack.image(self.image, "front camera")
+            self.camera_publisher.publish(image_msg)
+        except:
+            log.error("Could not get camera Image")
+        # print("getting camera data")
 
-    def get_state(self):
+    def get_joint_state(self):
+        # print("getting joint state")
         joint_positions = self.get_joint_positions()
-        image = self.image
-        
-        return {
-            "joint_positions": joint_positions,
-            "image": image
-        }
-    
-    def pack_data(self, state):
-        joint_positions = state["joint_positions"]
-        image = state["image"]
-
+        joint_velocities = self._driver.pass_joint_velocities(self._all_actuated_joints)
+        # joint_acceleration = self._driver.pass_joint_acceleration(self._all_actuated_joints)
         msg = joint_state_t()
         msg.n = len(joint_positions)
         msg.name = list(joint_positions.keys())
         msg.position = list(joint_positions.values())
-        msg.velocity = [0.0] * msg.n
-        msg.effort = [0.0] * msg.n
+        msg.velocity = list(joint_velocities.values())
+        msg.effort = [0.0] * 12
+        self.joint_publisher.publish(msg)
 
-        image_msg = pack.image(self.image, "front camera")
-
-        return {
-            self.joint_pub_name: msg,
-            self.camera_pub_name: image_msg,
-        }
+    def get_state(self):
+        pass
+    
+    def pack_data(self, state):
+        pass
 
     def _joint_group_command_callback(self, t, channel_name, msg):
         cmd, name = unpack.joint_group_command(msg)
@@ -155,6 +132,10 @@ class UnitreeGo2(Robot):
         if self.odometry:
             if self.show:
                 self.plotter.stop()
+
+    def step_component(self):
+        # overrides the parent definition
+        pass
 
 CONFIG_PATH = "/home/sarthakdas/Ark/ark_unitree_go_2/tests/go2_pybullet_sim/config/global_config.yaml"
 if __name__ == "__main__":

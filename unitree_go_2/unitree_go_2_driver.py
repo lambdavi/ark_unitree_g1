@@ -18,7 +18,7 @@ from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 from unitree_sdk2py.go2.sport.sport_client import SportClient
 from unitree_sdk2py.go2.video.video_client import VideoClient
-
+from unitree_sdk2py.idl.sensor_msgs.msg.dds_ import PointCloud2_
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
 # from unitree_go_2.unitree_go_2_odometry import UnitreeGo2Odometry
@@ -64,6 +64,9 @@ class UnitreeGo2Driver(RobotDriver):
         # TODO: Add IMU
 
         # TODO: Add Lidar
+        
+
+
         self.num_joints = len(self.joint_names)
 
 
@@ -76,21 +79,39 @@ class UnitreeGo2Driver(RobotDriver):
         sc.Init()
         sc.StandDown()
 
-        # Get subscribers
-        self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
-        self.lowstate_subscriber.Init(self.LowStateMessageHandler, 10)
 
-        self.lowstate_publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
-        self.lowstate_publisher.Init()
         
         # self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
         # self.odom_subscriber.Init(self.odom_callback)
 
         self.joint_positions = [0.0] * self.num_joints
+        self.joint_velocities = [0.0] * self.num_joints
+        self.jont_accelerations = [0.0] * self.num_joints
+
+
+        # Get subscribers
+        self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
+        self.lowstate_subscriber.Init(self.LowStateMessageHandler, 10)
+
+        self.lidar_subscriber = ChannelSubscriber("rt/utlidar/cloud", PointCloud2_)
+        self.lidar_subscriber.Init(self.LidarMessageHandler, 10)
+
+        self.lowstate_publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
+        self.lowstate_publisher.Init()
+
+    def LidarMessageHandler(self, msg: PointCloud2_):
+        print(len(msg.data))
+        # for pt in msg.data[:5]:
+        #     print(f"x={pt.x}, y={pt.y}, z={pt.z}")
+
 
     def LowStateMessageHandler(self, msg: LowState_):
         self.low_state = msg
-        self.joint_positions = [msg.motor_state[i].q for i in range(12)]
+        for i in range(12):
+            self.joint_positions[i] = msg.motor_state[i].q 
+            self.joint_velocities[i] = msg.motor_state[i].dq
+            self.jont_accelerations[i] = msg.motor_state[i].ddq
+        
         # print("JP:", self.joint_positions)
 
 
@@ -109,9 +130,28 @@ class UnitreeGo2Driver(RobotDriver):
 
 
     def pass_joint_velocities(self, joints: List[str]) -> Dict[str, float]:
-        raise NotImplementedError
+        joint_velocities = {}
+        for joint in joints:
+            if joint in self.joint_names:
+                index = self.joint_names.index(joint)
+                joint_velocities[joint] = self.joint_velocities[index]
+            else:
+                log.error(f"Joint {joint} not found in joint names.")
+        # print("Joint Positions:", joint_positions)
+        return joint_velocities
 
-    def pass_joint_efforts(self, joints: List[str]) -> Dict[str, float]:
+    def pass_joint_acceleration(self, joints: List[str]) -> Dict[str, float]:
+        jont_accelerations = {}
+        for joint in joints:
+            if joint in self.joint_names:
+                index = self.joint_names.index(joint)
+                jont_accelerations[joint] = self.jont_accelerations[index]
+            else:
+                log.error(f"Joint {joint} not found in joint names.")
+        # print("Joint Positions:", joint_positions)
+        return jont_accelerations
+    
+    def pass_joint_efforts(self, joints: [List[str]]) -> Dict[str, float]:
         raise NotImplementedError
 
     def pass_joint_group_control_cmd(self, control_mode: str, cmd: Dict[str, float], **kwargs) -> None:
