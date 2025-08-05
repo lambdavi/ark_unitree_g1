@@ -6,29 +6,37 @@ from pathlib import Path
 from typing import Dict, Any, List
 import cv2
 
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber, ChannelPublisher
+from unitree_sdk2py.core.channel import (
+    ChannelFactoryInitialize,
+    ChannelSubscriber,
+    ChannelPublisher,
+)
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._MotorState_ import MotorState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_._IMUState_ import IMUState_
 from unitree_sdk2py.idl.nav_msgs.msg.dds_._Odometry_ import Odometry_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
-from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import ObstaclesAvoidClient
+from unitree_sdk2py.go2.obstacles_avoid.obstacles_avoid_client import (
+    ObstaclesAvoidClient,
+)
 from unitree_sdk2py.utils.crc import CRC
-from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
+    MotionSwitcherClient,
+)
 from unitree_sdk2py.go2.sport.sport_client import SportClient
 from unitree_sdk2py.go2.video.video_client import VideoClient
 from unitree_sdk2py.idl.sensor_msgs.msg.dds_ import PointCloud2_
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
+
 # from unitree_go_2.unitree_go_2_odometry import UnitreeGo2Odometry
 
 
 class UnitreeGo2Driver(RobotDriver):
-    def __init__(self,
-                 component_name: str,
-                 component_config: Dict[str, Any] = None
-                 ) -> None:
+    def __init__(
+        self, component_name: str, component_config: Dict[str, Any] = None
+    ) -> None:
         """!
         Initialze the Unitree Go 2 driver
 
@@ -40,17 +48,25 @@ class UnitreeGo2Driver(RobotDriver):
 
         # TODO: Get this from the config
         self.joint_names = [
-            "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
-            "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
-            "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
-            "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
+            "FR_hip_joint",
+            "FR_thigh_joint",
+            "FR_calf_joint",
+            "FL_hip_joint",
+            "FL_thigh_joint",
+            "FL_calf_joint",
+            "RR_hip_joint",
+            "RR_thigh_joint",
+            "RR_calf_joint",
+            "RL_hip_joint",
+            "RL_thigh_joint",
+            "RL_calf_joint",
         ]
 
         if self.network_interface != "":
             ChannelFactoryInitialize(0, self.network_interface)
         else:
             ChannelFactoryInitialize(0)
-        
+
         # TODO; Add high level control
 
         # TODO: Add camera
@@ -58,18 +74,13 @@ class UnitreeGo2Driver(RobotDriver):
         self.video_client.SetTimeout(3.0)
         self.video_client.Init()
 
-
         # TODO: Add odometry
 
         # TODO: Add IMU
 
         # TODO: Add Lidar
-        
-
 
         self.num_joints = len(self.joint_names)
-
-
 
         msc = MotionSwitcherClient()
         msc.Init()
@@ -79,15 +90,12 @@ class UnitreeGo2Driver(RobotDriver):
         sc.Init()
         sc.StandDown()
 
-
-        
         # self.odom_subscriber = ChannelSubscriber("rt/utlidar/robot_odom", Odometry_)
         # self.odom_subscriber.Init(self.odom_callback)
 
         self.joint_positions = [0.0] * self.num_joints
         self.joint_velocities = [0.0] * self.num_joints
         self.jont_accelerations = [0.0] * self.num_joints
-
 
         # Get subscribers
         self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
@@ -102,14 +110,13 @@ class UnitreeGo2Driver(RobotDriver):
     def LidarMessageHandler(self, msg: PointCloud2_):
         self.lidar_data = msg
 
-
     def LowStateMessageHandler(self, msg: LowState_):
         self.low_state = msg
         for i in range(12):
-            self.joint_positions[i] = msg.motor_state[i].q 
+            self.joint_positions[i] = msg.motor_state[i].q
             self.joint_velocities[i] = msg.motor_state[i].dq
             self.jont_accelerations[i] = msg.motor_state[i].ddq
-        
+
         # print("JP:", self.joint_positions)
 
     def pass_joint_positions(self, joints: List[str]) -> Dict[str, float]:
@@ -146,11 +153,13 @@ class UnitreeGo2Driver(RobotDriver):
                 log.error(f"Joint {joint} not found in joint names.")
         # print("Joint Positions:", joint_positions)
         return jont_accelerations
-    
+
     def pass_joint_efforts(self, joints: [List[str]]) -> Dict[str, float]:
         raise NotImplementedError
 
-    def pass_joint_group_control_cmd(self, control_mode: str, cmd: Dict[str, float], **kwargs) -> None:
+    def pass_joint_group_control_cmd(
+        self, control_mode: str, cmd: Dict[str, float], **kwargs
+    ) -> None:
         low_cmd = unitree_go_msg_dds__LowCmd_()
         print("Control Mode:", control_mode)
         print("Command:", cmd)
@@ -176,17 +185,17 @@ class UnitreeGo2Driver(RobotDriver):
 
     def pass_lidar_data(self):
         return self.lidar_data
-    
+
     def pass_camera_image(self):
         code, data = self.video_client.GetImageSample()
 
         if code != 0:
             log.error("Failed to get Image")
-            return np.zeros((480,640,3), dtype=np.uint8)
+            return np.zeros((480, 640, 3), dtype=np.uint8)
         image_data = np.frombuffer(bytes(data), dtype=np.uint8)
         image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
         return image
-    
+
     def check_torque_status(self, joints: List[str]) -> Dict[str, bool]:
         raise NotImplementedError
 

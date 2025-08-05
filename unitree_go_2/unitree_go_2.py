@@ -16,30 +16,35 @@ from arktypes import (
     float_t,
     image_t,
     point_cloud2_t,
-    point_field_t
+    point_field_t,
 )
 from arktypes.utils import pack, unpack
 from unitree_go_2_driver import UnitreeGo2Driver
+
 # from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 from ark.tools.log import log
+
 
 @dataclass
 class Drivers(Enum):
     PYBULLET_DRIVER = BulletRobotDriver
     DRIVER = UnitreeGo2Driver
 
-class UnitreeGo2(Robot):
-    def __init__(self,
-                 name: str,
-                 global_config: Dict[str, Any] = None,
-                 driver: RobotDriver = None,
-                 ) -> None:
 
-        super().__init__(name = name,
-                         global_config = global_config,
-                         driver = driver,
-                         )
+class UnitreeGo2(Robot):
+    def __init__(
+        self,
+        name: str,
+        global_config: Dict[str, Any] = None,
+        driver: RobotDriver = None,
+    ) -> None:
+
+        super().__init__(
+            name=name,
+            global_config=global_config,
+            driver=driver,
+        )
         self.state = None
 
         control_mode = driver.config.get("control", "task_space")
@@ -53,8 +58,10 @@ class UnitreeGo2(Robot):
             self.subscriber_name = self.name + "/joint_group_command"
             self.subscriber_type = joint_group_command_t
             subscriber_callback = self._joint_group_command_callback
-            self.create_subscriber(self.subscriber_name, self.subscriber_type, subscriber_callback)
-        else: 
+            self.create_subscriber(
+                self.subscriber_name, self.subscriber_type, subscriber_callback
+            )
+        else:
             log.error("Control mode not supported: " + control_mode)
             self.kill_node()
 
@@ -65,13 +72,15 @@ class UnitreeGo2(Robot):
 
         self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
         self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
-        self.lidar_publisher = self.create_publisher(self.lidar_pub_name, point_cloud2_t)
+        self.lidar_publisher = self.create_publisher(
+            self.lidar_pub_name, point_cloud2_t
+        )
 
         self.joint_group_command = None
-        self.image = np.zeros((480,640,3), dtype=np.uint8)
-        self.joint_positions = [0,0,0,0,0,0,0,0,0,0,0,0]
+        self.image = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.joint_positions = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-        # create 2 steps for getting joint state and camera state
+        # create steppers for each sensor
         self.create_stepper(60, self.get_camera_data)
         self.create_stepper(240, self.get_joint_state)
         self.create_stepper(240, self.get_lidar_data)
@@ -79,8 +88,15 @@ class UnitreeGo2(Robot):
     def control_robot(self):
         if self.joint_group_command:
             cmd_dict = {}
-            group_name = self.joint_group_command['name']
-            for joint, goal in zip(list(self.joint_groups[self.joint_group_command['name']]["actuated_joints"]), self.joint_group_command['cmd']):
+            group_name = self.joint_group_command["name"]
+            for joint, goal in zip(
+                list(
+                    self.joint_groups[self.joint_group_command["name"]][
+                        "actuated_joints"
+                    ]
+                ),
+                self.joint_group_command["cmd"],
+            ):
                 cmd_dict[joint] = goal
             self._joint_cmd_msg = None
             control_mode = self.joint_groups[group_name]["control_mode"]
@@ -90,16 +106,14 @@ class UnitreeGo2(Robot):
 
     def get_lidar_data(self):
         lidar_data = self._driver.pass_lidar_data()
-        
+
         point_cloud = point_cloud2_t()
 
-        # print("height", lidar_data)
         point_cloud.height = lidar_data.height
         point_cloud.width = lidar_data.width
 
         point_cloud.num_fields = len(lidar_data.fields)
 
-        # pack some point fields
         point_field_array = [point_field_t()] * len(lidar_data.fields)
 
         point_cloud.fields = point_field_array
@@ -115,22 +129,17 @@ class UnitreeGo2(Robot):
 
         self.lidar_publisher.publish(point_cloud)
 
-
     def get_camera_data(self):
-        # print("getting camera data")
         self.image = self._driver.pass_camera_image()
         try:
             image_msg = pack.image(self.image, "front camera")
             self.camera_publisher.publish(image_msg)
         except:
             log.error("Could not get camera Image")
-        # print("getting camera data")
 
     def get_joint_state(self):
-        # print("getting joint state")
         joint_positions = self.get_joint_positions()
         joint_velocities = self._driver.pass_joint_velocities(self._all_actuated_joints)
-        # joint_acceleration = self._driver.pass_joint_acceleration(self._all_actuated_joints)
         msg = joint_state_t()
         msg.n = len(joint_positions)
         msg.name = list(joint_positions.keys())
@@ -141,7 +150,7 @@ class UnitreeGo2(Robot):
 
     def get_state(self):
         pass
-    
+
     def pack_data(self, state):
         pass
 
@@ -152,23 +161,10 @@ class UnitreeGo2(Robot):
             "name": name,
         }
 
-    def control_robot_task_space(self, t, channel_name, msg):
-        v_x, v_y, w = unpack.unpack_velocity_2d(msg)
-        self._driver.control_robot_task_space(v_x=v_x, v_y=v_y, w=w)
-
-    def send_robot_width(self, channel: str, msg: string_t) -> float_t:
-        msg = pack.pack_float(self.robot_width)
-        return msg
-
-    def suspend_node(self):
-        super().suspend_node()
-        if self.odometry:
-            if self.show:
-                self.plotter.stop()
-
     def step_component(self):
         # overrides the parent definition
         pass
+
 
 CONFIG_PATH = "/home/sarthakdas/Ark/ark_unitree_go_2/tests/go2_pybullet_sim/config/global_config.yaml"
 if __name__ == "__main__":
