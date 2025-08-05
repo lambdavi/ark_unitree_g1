@@ -14,7 +14,9 @@ from arktypes import (
     pose_2d_t,
     velocity_2d_t,
     float_t,
-    image_t
+    image_t,
+    point_cloud2_t,
+    point_field_t
 )
 from arktypes.utils import pack, unpack
 from unitree_go_2_driver import UnitreeGo2Driver
@@ -45,6 +47,7 @@ class UnitreeGo2(Robot):
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
         self.camera_pub_name = self.name + "/camera"
+        self.lidar_pub_name = self.name + "/lidar"
 
         if control_mode == "joint_space":
             self.subscriber_name = self.name + "/joint_group_command"
@@ -58,11 +61,12 @@ class UnitreeGo2(Robot):
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
             self.camera_pub_name = self.camera_pub_name + "/sim"
+            self.lidar_pub_name = self.lidar_pub_name + "/sim"
 
         self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
         self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
+        self.lidar_publisher = self.create_publisher(self.lidar_pub_name, point_cloud2_t)
 
-    
         self.joint_group_command = None
         self.image = np.zeros((480,640,3), dtype=np.uint8)
         self.joint_positions = [0,0,0,0,0,0,0,0,0,0,0,0]
@@ -70,6 +74,7 @@ class UnitreeGo2(Robot):
         # create 2 steps for getting joint state and camera state
         self.create_stepper(60, self.get_camera_data)
         self.create_stepper(240, self.get_joint_state)
+        self.create_stepper(240, self.get_lidar_data)
 
     def control_robot(self):
         if self.joint_group_command:
@@ -82,6 +87,34 @@ class UnitreeGo2(Robot):
             self.control_joint_group(control_mode, cmd_dict)
 
         self.joint_group_command = None
+
+    def get_lidar_data(self):
+        lidar_data = self._driver.pass_lidar_data()
+        
+        point_cloud = point_cloud2_t()
+
+        # print("height", lidar_data)
+        point_cloud.height = lidar_data.height
+        point_cloud.width = lidar_data.width
+
+        point_cloud.num_fields = len(lidar_data.fields)
+
+        # pack some point fields
+        point_field_array = [point_field_t()] * len(lidar_data.fields)
+
+        point_cloud.fields = point_field_array
+
+        point_cloud.is_bigendian = lidar_data.is_bigendian
+        point_cloud.point_step = lidar_data.point_step
+        point_cloud.row_step = lidar_data.row_step
+
+        point_cloud.num_bytes = len(lidar_data.data)
+        point_cloud.data = lidar_data.data
+
+        point_cloud.is_dense = lidar_data.is_dense
+
+        self.lidar_publisher.publish(point_cloud)
+
 
     def get_camera_data(self):
         # print("getting camera data")

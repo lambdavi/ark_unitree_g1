@@ -100,9 +100,7 @@ class UnitreeGo2Driver(RobotDriver):
         self.lowstate_publisher.Init()
 
     def LidarMessageHandler(self, msg: PointCloud2_):
-        print(len(msg.data))
-        # for pt in msg.data[:5]:
-        #     print(f"x={pt.x}, y={pt.y}, z={pt.z}")
+        self.lidar_data = msg
 
 
     def LowStateMessageHandler(self, msg: LowState_):
@@ -113,7 +111,6 @@ class UnitreeGo2Driver(RobotDriver):
             self.jont_accelerations[i] = msg.motor_state[i].ddq
         
         # print("JP:", self.joint_positions)
-
 
     def pass_joint_positions(self, joints: List[str]) -> Dict[str, float]:
         # pack self.joint_positions into a dictionary
@@ -127,7 +124,6 @@ class UnitreeGo2Driver(RobotDriver):
                 log.error(f"Joint {joint} not found in joint names.")
         # print("Joint Positions:", joint_positions)
         return joint_positions
-
 
     def pass_joint_velocities(self, joints: List[str]) -> Dict[str, float]:
         joint_velocities = {}
@@ -178,6 +174,8 @@ class UnitreeGo2Driver(RobotDriver):
         low_cmd.crc = crc.Crc(low_cmd)
         self.lowstate_publisher.Write(low_cmd)
 
+    def pass_lidar_data(self):
+        return self.lidar_data
     
     def pass_camera_image(self):
         code, data = self.video_client.GetImageSample()
