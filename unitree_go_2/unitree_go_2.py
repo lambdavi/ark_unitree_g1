@@ -47,7 +47,7 @@ class UnitreeGo2(Robot):
         )
         self.state = None
 
-        control_mode = driver.config.get("control", "task_space")
+        control_mode = driver.config.get("control", "joint_space")
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
@@ -70,20 +70,22 @@ class UnitreeGo2(Robot):
             self.camera_pub_name = self.camera_pub_name + "/sim"
             self.lidar_pub_name = self.lidar_pub_name + "/sim"
 
-        self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
-        self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
-        self.lidar_publisher = self.create_publisher(
-            self.lidar_pub_name, point_cloud2_t
-        )
-
         self.joint_group_command = None
         self.image = np.zeros((480, 640, 3), dtype=np.uint8)
         self.joint_positions = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-        # create steppers for each sensor
-        self.create_stepper(60, self.get_camera_data)
+        self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
         self.create_stepper(240, self.get_joint_state)
-        self.create_stepper(240, self.get_lidar_data)
+
+        if self.robot_config["camera"]:
+            self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
+            self.create_stepper(60, self.get_camera_data)
+
+        if self.robot_config["lidar"]:
+            self.lidar_publisher = self.create_publisher(
+                self.lidar_pub_name, point_cloud2_t
+            )
+            self.create_stepper(240, self.get_lidar_data)
 
     def control_robot(self):
         if self.joint_group_command:
@@ -155,12 +157,6 @@ class UnitreeGo2(Robot):
         msg.effort = [0.0] * 12
         self.joint_publisher.publish(msg)
 
-    def get_state(self):
-        pass
-
-    def pack_data(self, state):
-        pass
-
     def _joint_group_command_callback(self, t, channel_name, msg):
         cmd, name = unpack.joint_group_command(msg)
         self.joint_group_command = {
@@ -168,14 +164,19 @@ class UnitreeGo2(Robot):
             "name": name,
         }
 
+    def get_state(self):
+        pass
+
+    def pack_data(self, state):
+        pass
+
     def step_component(self):
         # overrides the parent definition
         pass
 
 
-CONFIG_PATH = "/home/sarthakdas/Ark/ark_unitree_go_2/tests/go2_pybullet_sim/config/global_config.yaml"
+CONFIG_PATH = "unitree_go_2.yaml"
 if __name__ == "__main__":
-    # raise NotImplementedError("This robot is not meant to be run as a standalone node. Please use the ark simulator")
     name = "unitree_go_2"
     driver = UnitreeGo2Driver(name, CONFIG_PATH)
     main(UnitreeGo2, name, CONFIG_PATH, driver)

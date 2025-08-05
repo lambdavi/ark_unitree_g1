@@ -4,7 +4,6 @@ config:
   class_dir: "/home/sarthakdas/Ark/ark_unitree_go_2/unitree_go_2"
   network_interface: "enx000ec6bdee34"       # (Optional) Network interface to use
   frequency: 240  # default is 240Hz
-  width: 0.31   # Width of the robot (m)
   control: "joint_space"
   joint_space_control:
     Kp: 60.0               # Joint stiffness coefficient
@@ -21,10 +20,8 @@ config:
       0.85, 4.59, -0.98,   # RR_hip, RR_thigh, RR_calf,
       0.76, 4.58, -0.99    # RL_hip, RL_thigh, RL_calf
     ]
-  odometry: False
-  show_odometry: False
-  show_frequency: 30
-  contact_force_threshold: 20.0
+  lidar: True
+  camera: True
   initial_configuration:
     - 0
     - 0
