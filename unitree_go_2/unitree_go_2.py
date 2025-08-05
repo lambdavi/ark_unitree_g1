@@ -114,7 +114,14 @@ class UnitreeGo2(Robot):
 
         point_cloud.num_fields = len(lidar_data.fields)
 
-        point_field_array = [point_field_t()] * len(lidar_data.fields)
+        point_field_array = []
+        for field in lidar_data.fields:
+            point_field = point_field_t()
+            point_field.name = field.name
+            point_field.offset = field.offset
+            point_field.datatype = field.datatype
+            point_field.count = field.count
+            point_field_array.append(point_field)
 
         point_cloud.fields = point_field_array
 
