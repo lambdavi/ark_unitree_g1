@@ -77,6 +77,11 @@ class UnitreeGo2(Robot):
         self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
         self.create_stepper(240, self.get_joint_state)
 
+        if self.sim:
+            log.warn(
+                "UnitreeGo2 in Simulation does not support Lidar or Camera publishing"
+            )
+
         if self.robot_config["camera"]:
             self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
             self.create_stepper(60, self.get_camera_data)
