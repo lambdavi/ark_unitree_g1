@@ -1,7 +1,8 @@
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
-
+import numpy as np
+from ark.client.comm_infrastructure.base_node import main
 from ark.system.component.robot import Robot
 from ark.system.driver.robot_driver import RobotDriver
 from arktypes import (
@@ -12,110 +13,175 @@ from arktypes import (
     string_t,
     pose_2d_t,
     velocity_2d_t,
-    float_t
+    float_t,
+    image_t,
+    point_cloud2_t,
+    point_field_t,
 )
-from arktypes import pack, unpack
-from unitree_go_2.unitree_go_2_driver import UnitreeGo2Driver
-from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
+from arktypes.utils import pack, unpack
+from unitree_go_2_driver import UnitreeGo2Driver
+
+# from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
+from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
+from ark.tools.log import log
 
 
 @dataclass
 class Drivers(Enum):
-    PYBULLET_DRIVER = None
+    PYBULLET_DRIVER = BulletRobotDriver
     DRIVER = UnitreeGo2Driver
 
-class UnitreeGo2(Robot):
-    def __init__(self,
-                 name: str,
-                 global_config: Dict[str, Any] = None,
-                 driver: RobotDriver = None,
-                 ) -> None:
 
-        super().__init__(name = name,
-                         global_config = global_config,
-                         driver = driver,
-                         )
-        self.data = None
+class UnitreeGo2(Robot):
+    def __init__(
+        self,
+        name: str,
+        global_config: Dict[str, Any] = None,
+        driver: RobotDriver = None,
+    ) -> None:
+
+        super().__init__(
+            name=name,
+            global_config=global_config,
+            driver=driver,
+        )
+        self.state = None
+
+        control_mode = driver.config.get("control", "joint_space")
 
         # Create names
         self.joint_pub_name = self.name + "/joint_states"
-        self.force_pub_name = self.name + "/foot_forces"
-        self.imu_pub_name = self.name + "/imu"
-        self.subscriber_name = self.name + "/control_velocity"
-        self.width_service_name = self.name + "/width"
+        self.camera_pub_name = self.name + "/camera"
+        self.lidar_pub_name = self.name + "/lidar"
+
+        if control_mode == "joint_space":
+            self.subscriber_name = self.name + "/joint_group_command"
+            self.subscriber_type = joint_group_command_t
+            subscriber_callback = self._joint_group_command_callback
+            self.create_subscriber(
+                self.subscriber_name, self.subscriber_type, subscriber_callback
+            )
+        else:
+            log.error("Control mode not supported: " + control_mode)
+            self.kill_node()
 
         if self.sim == True:
             self.joint_pub_name = self.joint_pub_name + "/sim"
-            self.force_pub_name = self.force_pub_name + "/sim"
-            self.imu_pub_name = self.imu_pub_name + "/sim"
-            self.subscriber_name = self.subscriber_name + "/sim"
-            self.width_service_name = self.width_service_name + "/sim"
+            self.camera_pub_name = self.camera_pub_name + "/sim"
+            self.lidar_pub_name = self.lidar_pub_name + "/sim"
 
-        self.component_channels = [(self.joint_pub_name, joint_state_t),
-                                   (self.force_pub_name, force_t),
-                                   (self.imu_pub_name, imu_t)]
+        self.joint_group_command = None
+        self.image = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.joint_positions = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-        self.odometry = driver.config.get("odometry", True)
-        if self.odometry:
-            self.init_odometry()
+        self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
+        self.create_stepper(240, self.get_joint_state)
 
-        self.create_subscriber(self.subscriber_name, velocity_2d_t, self.set_base_velocity)
-        self.component_channels_init(self.component_channels)
-
-        # Create robot width service
-        self.robot_width = driver.config.get("width", 0.31)
-        self.create_service(self.width_service_name, string_t, float_t, self.send_robot_width)
-
-    def init_odometry(self):
-        # Init publish channel
-        self.odometry_pub_name = self.name + "/odometry"
         if self.sim:
-            self.odometry_pub_name = self.odometry_pub_name + "/sim"
-        self.component_channels.append((self.odometry_pub_name, velocity_2d_t))
+            log.warn(
+                "UnitreeGo2 in Simulation does not support Lidar or Camera publishing"
+            )
 
-        # Init plotter
-        self.show = self._driver.config.get("show_odometry", False)
-        if self.show:
-            frequency = self._driver.config.get("show_frequency", 30)
-            self.plotter = UnitreeGo2Plotter()
-            self.create_stepper(frequency, self.update_plotter)
+        if self.robot_config["camera"]:
+            self.camera_publisher = self.create_publisher(self.camera_pub_name, image_t)
+            self.create_stepper(60, self.get_camera_data)
 
-    def update_plotter(self):
-        if self.data is not None:
-            self.plotter.update(self.data)
+        if self.robot_config["lidar"]:
+            self.lidar_publisher = self.create_publisher(
+                self.lidar_pub_name, point_cloud2_t
+            )
+            self.create_stepper(240, self.get_lidar_data)
 
-    def get_robot_data(self):
-        self.data = self._driver.get_robot_data()
+    def control_robot(self):
+        if self.joint_group_command:
+            cmd_dict = {}
+            group_name = self.joint_group_command["name"]
+            for joint, goal in zip(
+                list(
+                    self.joint_groups[self.joint_group_command["name"]][
+                        "actuated_joints"
+                    ]
+                ),
+                self.joint_group_command["cmd"],
+            ):
+                cmd_dict[joint] = goal
+            self._joint_cmd_msg = None
+            control_mode = self.joint_groups[group_name]["control_mode"]
+            self.control_joint_group(control_mode, cmd_dict)
 
-    def pack_data(self):
-        joint_msg = pack.pack_joint_state(**self.data["joint_state"])
-        force_msg = pack.pack_force(**self.data["foot_force"])
-        imu_msg = pack.pack_imu(**self.data["imu"])
-        msgs = {self.joint_pub_name: joint_msg,
-                self.force_pub_name: force_msg,
-                self.imu_pub_name: imu_msg}
+        self.joint_group_command = None
 
-        if self.odometry:
-            odom_msg = pack.pack_velocity_2d(**self.data["odometry"])
-            msgs[self.odometry_pub_name] = odom_msg
-        return msgs
+    def get_lidar_data(self):
+        lidar_data = self._driver.pass_lidar_data()
+
+        point_cloud = point_cloud2_t()
+
+        point_cloud.height = lidar_data.height
+        point_cloud.width = lidar_data.width
+
+        point_cloud.num_fields = len(lidar_data.fields)
+
+        point_field_array = []
+        for field in lidar_data.fields:
+            point_field = point_field_t()
+            point_field.name = field.name
+            point_field.offset = field.offset
+            point_field.datatype = field.datatype
+            point_field.count = field.count
+            point_field_array.append(point_field)
+
+        point_cloud.fields = point_field_array
+
+        point_cloud.is_bigendian = lidar_data.is_bigendian
+        point_cloud.point_step = lidar_data.point_step
+        point_cloud.row_step = lidar_data.row_step
+
+        point_cloud.num_bytes = len(lidar_data.data)
+        point_cloud.data = lidar_data.data
+
+        point_cloud.is_dense = lidar_data.is_dense
+
+        self.lidar_publisher.publish(point_cloud)
+
+    def get_camera_data(self):
+        self.image = self._driver.pass_camera_image()
+        try:
+            image_msg = pack.image(self.image, "front camera")
+            self.camera_publisher.publish(image_msg)
+        except:
+            log.error("Could not get camera Image")
+
+    def get_joint_state(self):
+        joint_positions = self.get_joint_positions()
+        joint_velocities = self._driver.pass_joint_velocities(self._all_actuated_joints)
+        msg = joint_state_t()
+        msg.n = len(joint_positions)
+        msg.name = list(joint_positions.keys())
+        msg.position = list(joint_positions.values())
+        msg.velocity = list(joint_velocities.values())
+        msg.effort = [0.0] * 12
+        self.joint_publisher.publish(msg)
+
+    def _joint_group_command_callback(self, t, channel_name, msg):
+        cmd, name = unpack.joint_group_command(msg)
+        self.joint_group_command = {
+            "cmd": cmd,
+            "name": name,
+        }
+
+    def get_state(self):
+        pass
+
+    def pack_data(self, state):
+        pass
 
     def step_component(self):
-        self.get_robot_data()
-        if self.data is not None:
-            packed = self.pack_data()
-            self.component_multi_publisher.publish(packed)
+        # overrides the parent definition
+        pass
 
-    def set_base_velocity(self, t, channel_name, msg):
-        v_x, v_y, w = unpack.unpack_velocity_2d(msg)
-        self._driver.set_base_velocity(v_x=v_x, v_y=v_y, w=w)
 
-    def send_robot_width(self, channel: str, msg: string_t) -> float_t:
-        msg = pack.pack_float(self.robot_width)
-        return msg
-
-    def suspend_node(self):
-        super().suspend_node()
-        if self.odometry:
-            if self.show:
-                self.plotter.stop()
+CONFIG_PATH = "unitree_go_2.yaml"
+if __name__ == "__main__":
+    name = "unitree_go_2"
+    driver = UnitreeGo2Driver(name, CONFIG_PATH)
+    main(UnitreeGo2, name, CONFIG_PATH, driver)
