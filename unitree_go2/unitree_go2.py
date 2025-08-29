@@ -19,9 +19,9 @@ from arktypes import (
     point_field_t,
 )
 from arktypes.utils import pack, unpack
-from unitree_go_2_driver import UnitreeGo2Driver
+from ark_robots.ark_unitree_go_2.unitree_go2.unitree_go_2driver import UnitreeGo2Driver
 
-# from unitree_go_2.unitree_go_2_plotter import UnitreeGo2Plotter
+# from unitree_go2.unitree_go_2_plotter import UnitreeGo2Plotter
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 from ark.tools.log import log
 
@@ -180,8 +180,8 @@ class UnitreeGo2(Robot):
         pass
 
 
-CONFIG_PATH = "unitree_go_2.yaml"
+CONFIG_PATH = "unitree_go2.yaml"
 if __name__ == "__main__":
-    name = "unitree_go_2"
+    name = "unitree_go2"
     driver = UnitreeGo2Driver(name, CONFIG_PATH)
     main(UnitreeGo2, name, CONFIG_PATH, driver)
