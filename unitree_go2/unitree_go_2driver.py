@@ -30,8 +30,6 @@ from unitree_sdk2py.idl.sensor_msgs.msg.dds_ import PointCloud2_
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver
 
-# from unitree_go_2.unitree_go_2_odometry import UnitreeGo2Odometry
-
 
 class UnitreeGo2Driver(RobotDriver):
     def __init__(

@@ -1,7 +1,7 @@
-name: "unitree_go_2"
+name: "unitree_go2"
 config:
   urdf_path: "urdf/urdf/go2_description.urdf"
-  class_dir: "/home/sarthakdas/Ark/ark_unitree_go_2/unitree_go_2"
+  class_dir: "/home/sarthakdas/Ark/ark_unitree_go2/unitree_go2"
   network_interface: "enx000ec6bdee34"       # (Optional) Network interface to use
   frequency: 240  # default is 240Hz
   control: "joint_space"
