@@ -36,7 +36,7 @@ class UnitreeGo2Driver(RobotDriver):
         self, component_name: str, component_config: Dict[str, Any] = None
     ) -> None:
         """!
-        Initialze the Unitree Go 2 driver
+        Initialze the Unitree Go2 driver
 
         @param component_name Name of the robot.
         @param component_config Configuration dictionary for the robot.
