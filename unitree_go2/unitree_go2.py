@@ -19,7 +19,7 @@ from arktypes import (
     point_field_t,
 )
 from arktypes.utils import pack, unpack
-from ark_robots.ark_unitree_go2.unitree_go2.unitree_go2driver import UnitreeGo2Driver
+from ark_robots.ark_unitree_go2.unitree_go2.unitree_go2_driver import UnitreeGo2Driver
 
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 from ark.tools.log import log

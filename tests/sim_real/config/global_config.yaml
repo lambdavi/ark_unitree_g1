@@ -28,7 +28,7 @@ simulator:
   #     far_plane: 100.0                        # far plane distance
 
 robots:
-  - "robots/unitree_go2sim.yaml"
+  - "robots/unitree_go2_sim.yaml"
 
 objects:
   - "objects/floor.yaml"

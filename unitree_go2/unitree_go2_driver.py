@@ -67,7 +67,7 @@ class UnitreeGo2Driver(RobotDriver):
 
         # TODO; Add high level control
 
-        # TODO: Add camera
+        # Add camera
         self.video_client = VideoClient()  # Create a video client
         self.video_client.SetTimeout(3.0)
         self.video_client.Init()
@@ -75,8 +75,6 @@ class UnitreeGo2Driver(RobotDriver):
         # TODO: Add odometry
 
         # TODO: Add IMU
-
-        # TODO: Add Lidar
 
         self.num_joints = len(self.joint_names)
 
@@ -119,7 +117,6 @@ class UnitreeGo2Driver(RobotDriver):
 
     def pass_joint_positions(self, joints: List[str]) -> Dict[str, float]:
         # pack self.joint_positions into a dictionary
-        # TODO: Check this works
         joint_positions = {}
         for joint in joints:
             if joint in self.joint_names:
