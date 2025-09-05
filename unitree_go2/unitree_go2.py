@@ -19,7 +19,7 @@ from arktypes import (
     point_field_t,
 )
 from arktypes.utils import pack, unpack
-from ark_robots.ark_unitree_go2.unitree_go2.unitree_go2driver import UnitreeGo2Driver
+
 
 from ark.system.pybullet.pybullet_robot_driver import BulletRobotDriver
 from ark.tools.log import log
@@ -28,7 +28,11 @@ from ark.tools.log import log
 @dataclass
 class Drivers(Enum):
     PYBULLET_DRIVER = BulletRobotDriver
-    DRIVER = UnitreeGo2Driver
+    try: 
+        from unitree_go2_driver import UnitreeGo2Driver
+        DRIVER = UnitreeGo2Driver
+    except:
+        log.warning("libraries for the UnitreeGo2Driver not found")
 
 
 class UnitreeGo2(Robot):
