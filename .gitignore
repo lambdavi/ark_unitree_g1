@@ -4,3 +4,4 @@ __pycache__/
 
 unitree_sdk2_python
 cyclonedds
+.DS_Store

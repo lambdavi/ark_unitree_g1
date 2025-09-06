@@ -11,9 +11,9 @@ class ListenerNode(BaseNode):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__("Real to Sim")
-        self.create_subscriber("unitree_go2/joint_states", joint_state_t, self.callback)
+        self.create_subscriber("unitree_g1/joint_states", joint_state_t, self.callback)
         self.commands = []
-        # self.pub = self.create_publisher("unitree_go2_sim/joint_group_command/sim", joint_group_command_t)
+        # self.pub = self.create_publisher("unitree_g1_sim/joint_group_command/sim", joint_group_command_t)
 
     def callback(self, t, channel_name, msg):
         _, _, joint_data, _, _ = unpack.joint_state(msg)

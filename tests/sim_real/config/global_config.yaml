@@ -1,5 +1,5 @@
 simulator:
-  name: "GO2_simulator"                      # name of the node for ark graph
+  name: "G1_simulator"                      # name of the node for ark graph
   backend_type: "pybullet"                      # type of the backend
   node_frequency: 240                           # node frequency in Hz (default 240)
   config:                                       # simulator-specific
@@ -28,7 +28,7 @@ simulator:
   #     far_plane: 100.0                        # far plane distance
 
 robots:
-  - "robots/unitree_go2_sim.yaml"
+  - "robots/unitree_g1_sim.yaml"
 
 objects:
   - "objects/floor.yaml"

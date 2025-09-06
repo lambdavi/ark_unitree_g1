@@ -1,4 +1,4 @@
-# Unitree Go2
+# Unitree G1
 
 ## Install
 ```
@@ -6,7 +6,7 @@ pip install -e .
 
 ```
 ## How to Run
-You can run the Unitree Go2 node via:
+You can run the Unitree G1 node via:
 ```
-python unitree_go2.py
+python unitree_g1.py
 ```
