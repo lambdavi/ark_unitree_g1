@@ -22,7 +22,6 @@ from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
     MotionSwitcherClient,
 )
 from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
-from unitree_sdk2py.g1.arm.g1_arm_action_client import ArmActionClient
 from unitree_sdk2py.idl.sensor_msgs.msg.dds_ import PointCloud2_
 from ark.tools.log import log
 from ark.system.driver.robot_driver import RobotDriver

@@ -31,6 +31,7 @@ class Drivers(Enum):
     try: 
         from unitree_g1_driver import UnitreeG1Driver
         DRIVER = UnitreeG1Driver
+        print("UnitreeG1Driver found")
     except:
         log.warning("libraries for the UnitreeG1Driver not found")
 
@@ -75,7 +76,7 @@ class UnitreeG1(Robot):
 
         self.joint_group_command = None
         self.image = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.joint_positions = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.joint_positions = [0] * 43
 
         self.joint_publisher = self.create_publisher(self.joint_pub_name, joint_state_t)
         self.create_stepper(240, self.get_joint_state)
@@ -185,6 +186,8 @@ class UnitreeG1(Robot):
 
 CONFIG_PATH = "unitree_g1.yaml"
 if __name__ == "__main__":
+    from unitree_g1_driver import UnitreeG1Driver
+
     name = "unitree_g1"
     driver = UnitreeG1Driver(name, CONFIG_PATH)
     main(UnitreeG1, name, CONFIG_PATH, driver)
